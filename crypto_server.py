@@ -3,10 +3,11 @@ import datetime
 from ecdsa import SigningKey, VerifyingKey, SECP256k1
 import os, glob
 import hashlib
+import struct
 
 class KeyHolder:
-    self.SIZE_OF_HASH = hashlib.sha3_512().digest_size
-    self.SIZE_OF_SIG = 64
+    SIZE_OF_HASH = hashlib.sha3_512().digest_size
+    SIZE_OF_SIG = 64
 
     def __init__(self):
         if not os.path.isdir('keys'):
@@ -20,7 +21,8 @@ class KeyHolder:
         return self._get_key().get_verifying_key().verify(signature, data)
 
     def get_public_key(self):
-        return self._get_key().get_verifying_key().to_pem()
+        pubkey = self._get_key().get_verifying_key().to_der()
+        return struct.pack('>I', len(pubkey)) + pubkey
 
     def _get_key(self):
         today = datetime.datetime.now().date().isoformat()
@@ -56,16 +58,20 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
         if operation == b'\x00':
             # sign
             data = self.request.recv(keyholder.SIZE_OF_HASH) # sha-3 512 hash of the data (only for efficiency).
+            print(f'Signing data: {data}')
             result = keyholder.sign(data) 
         elif operation == b'\x01':
             # get public key of today
+            print('public key requested')
             result = keyholder.get_public_key()
         elif operation == b'\x02':
             # verify (should be done by the web server (which holds all the public keys), not by the crypto server!)
             data = self.request.recv(keyholder.SIZE_OF_HASH)
             signature = self.request.recv(keyholder.SIZE_OF_SIG)
+            print(f'verifying data: {data} with signature: {sig}')
             result = keyholder.verify(data, signature)
         
+        print(f'sending result of len {len(result)}, result = {result}')
         self.request.sendall(result)
 
 import sys
